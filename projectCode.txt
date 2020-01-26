@@ -1,0 +1,569 @@
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+import pandas_profiling
+from scipy import stats
+from __future__ import division
+from datetime import datetime, timedelta
+from dateutil import relativedelta
+import glob
+from OutlierModule import outliers
+from IPython.display import Image
+plt.style.use('ggplot')
+%matplotlib inline
+
+import warnings
+warnings.filterwarnings('ignore')
+
+#file import
+filenames = glob.glob('Divvy_data/Divvy_Trips*.csv')
+
+divvy_sets = []
+for file in filenames:
+    print('Reading in {0}'.format(file))
+    divvy_sets.append(pd.read_csv(file,
+                                  parse_dates=['starttime', 'stoptime'], 
+                                  infer_datetime_format=True))
+
+
+divvy = pd.concat(divvy_sets)
+divvy.to_pickle('divvy.pkl')
+divvy = pd.read_pickle('divvy.pkl')
+divvy.shape
+divvy.info()
+divvy.dtypes.value_counts()
+
+
+print('Total bytes: {0} and Total MB: {1}\n'
+      .format(divvy.memory_usage(deep=True).sum(),
+              int(divvy.memory_usage(deep=True).sum()/1048576)))
+print(divvy.memory_usage(deep=True))
+
+
+divvy._data
+
+
+objects = divvy.select_dtypes(['object'])
+objects_memory = objects.memory_usage(deep=True)
+obj_memory_total = (objects_memory.sum()/1048576)
+print('True MB used to store the strings in the object columns is roughly {0} MB.'
+      .format(int(obj_memory_total)))
+
+
+divvy.shape
+
+
+#feature modeling 
+divvy = pd.read_pickle('divvy.pkl')
+
+
+divvy = divvy.rename(columns={'starttime':'start_time', 'stoptime':'stop_time',
+                              'bikeid':'bike_id', 'tripduration':'trip_duration',
+                              'from_station_id':'start_id',
+                              'from_station_name': 'start_station',
+                              'to_station_id':'end_id',
+                              'to_station_name': 'end_station',
+                              'usertype':'user_type', 'birthyear':'birth_year'})
+
+
+complete = divvy.notnull().sum() * 100.0/divvy.shape[0]
+print("Percentage complete for each column: \n{0}".format(complete))
+
+divvy.apply(lambda x: sum(x.isnull()), axis=0)
+
+a = pd.DataFrame(divvy.user_type.value_counts().sort_values(ascending=False))
+b = pd.DataFrame(divvy.user_type.value_counts()/divvy.user_type.value_counts().sum())
+b = b*100; b = b.rename(columns={'user_type':'% of total'})
+user_type = pd.concat([a, b], axis=1); print(user_type)
+print('Total         {0}'.format(divvy.user_type.value_counts().sum()))
+
+b['% of total'] = b.sum(axis=1)
+new_index= ['Subscriber', 'Customer', 'Dependent', 'Total']
+b = b.reindex(new_index, fill_value=100.00)
+b['% of total'] = b['% of total'].round(2); print(b)
+
+
+fig = plt.figure(figsize=(14, 2))
+ax = fig.gca() #.invert_yaxis()
+colors = ['#87CEFA']
+divvy.user_type.value_counts(ascending=False).head(2).plot(kind='barh',
+                                               color=colors,
+                                               edgecolor="#000000")
+plt.xticks([0, 500000, 1000000, 1500000, 2000000, 2500000],
+           ['0', '500,000', '1,000,000', '1,500,000',
+            '2,000,000', '2,500,000'],
+           fontsize=12, fontweight='bold')
+plt.yticks(fontsize=12, fontweight='bold')
+plt.title("Divvy Rides by Account Type (2016)", fontsize=14, fontweight='bold');
+
+
+#studying subscriber's gender breakout
+
+c = pd.DataFrame(divvy.gender.value_counts().sort_values(ascending=False))
+d = pd.DataFrame(divvy.gender.value_counts()/divvy.gender.value_counts().sum())
+d = d*100; d = d.rename(columns={'gender':'% of total'})
+#d['% of total'] = d['% of total'].round(2)
+member_gender = pd.concat([c, d], axis=1); print(member_gender)
+print('Total   {0}'.format(divvy.gender.value_counts().sum()))
+
+
+fig = plt.figure(figsize=(14, 2))
+ax = fig.gca() #.invert_yaxis()
+colors = ['#87CEFA']
+divvy.gender.value_counts(ascending=True).plot(kind='barh',
+                                               color=colors,
+                                               edgecolor="#000000")
+plt.xticks([0, 250000, 500000, 750000, 1000000,
+            1250000, 1500000, 1750000, 2000000],
+           ['0', '250,000', '500,000', '750,000','1,000,000',
+            '1,250,000', '1,500,000', '1,750,000', '2,000,000'],
+           fontsize=12, fontweight='bold')
+plt.yticks(fontsize=12, fontweight='bold')
+plt.title("Rides by Gender Binary 2016", fontsize=14, fontweight='bold');
+
+
+
+
+millennials = divvy[(divvy.birth_year >= 1981) & (divvy.birth_year <= 1994)]
+
+
+
+millennials.gender.value_counts()/millennials.gender.value_counts().sum() * 100
+
+genX_split = divvy[(divvy.birth_year >= 1965) & (divvy.birth_year <= 1980)]
+
+
+genX_split.gender.value_counts()
+
+
+genX_split.gender.value_counts()/genX_split.gender.value_counts().sum() * 100
+
+
+#Member age study
+
+divvy.birth_year.fillna(0, inplace=True)
+divvy.birth_year = divvy.birth_year.astype(int)
+
+divvy.birth_year.value_counts()[0]
+
+#Baby Boomers 1946-1964, Generation X 1965-1980,
+#Generation Y 1981-1994, Generation Z 1995-2016
+fig = plt.figure(figsize=(14, 18))
+ax = fig.gca()
+colors = ['#87CEFA']
+divvy.birth_year.value_counts().sort_index()[1:].plot(kind='barh',
+                                               color=colors,
+                                               edgecolor="#000000")
+plt.xticks([0, 20000, 40000, 60000, 80000,
+            100000, 120000, 140000, 160000],
+           ['0', '20,000', '40,000', '60,000','80,000',
+            '100,000', '120,000', '140,000', '160,000'],
+           fontsize=12)
+plt.yticks(fontsize=12)
+plt.title("Subscriber Birth Year Counts", fontsize=14, fontweight='bold');
+
+
+#Baby Boomers 1946-1964, Generation X 1965-1980,
+#Generation Y 1981-1994, Generation Z 1995-2016
+pre_boom = divvy.birth_year.value_counts().sort_index()[0:24].sum()
+print('Subscriber count for prior gens:   {0}'.format(pre_boom))
+boomers = divvy.birth_year.value_counts().sort_index()[24:43].sum()
+print('Subscriber count for Baby Boomers: {0}'.format(boomers))
+gen_x = divvy.birth_year.value_counts().sort_index()[43:59].sum()
+print('Subscriber count for Generation X: {0}'.format(gen_x))
+gen_y = divvy.birth_year.value_counts().sort_index()[59:73].sum()
+print('Subscriber count for Millennials: {0}'.format(gen_y))
+gen_z = divvy.birth_year.value_counts().sort_index()[73:].sum()
+print('Subscriber count for Generation Z:  {0}'.format(gen_z))
+
+
+
+pre = (pre_boom/divvy.birth_year.count())*100; pre = round(pre,2)
+b = (boomers/divvy.birth_year.count())*100; b = round(b,2)
+x = (gen_x/divvy.birth_year.count())*100; x = round(x,2)
+y = (gen_y/divvy.birth_year.count())*100; y = round(y,2)
+z = (gen_z/divvy.birth_year.count())*100; z = round(z,2)
+print('Percentage of Subscribers by generation: \n\nPre-boomers: {0}%, \
+Boomers: {1}%, Gen-X: {2}%, Millennials: {3}%, Gen-Z: {4}%'.format(pre, b, x, y, z))
+
+
+print(member_gender)
+
+
+#As is common in the world of bike share, subscribers are predominantly male and/or fall into the Millennial/Gen-X category.
+
+#Trip Durration 
+
+divvy.head(2)
+
+print('Average Divvy trip in seconds: {0}'.format(divvy.trip_duration.mean()))
+
+print('BE ADVISED: Scales are significantly different.')
+x = divvy.trip_duration
+filtered = x[~outliers.is_outlier(x)]
+
+fig, (ax1, ax2) = plt.subplots(1,2, figsize=(16, 5))
+ax1.hist(x, color='#87CEFA', edgecolor="#000000")
+ax1.set_title('Divvy Trip Duration', y=1.01,
+              fontsize=14, fontweight='bold')
+ax1.set_xlabel('Duration in Seconds')
+ax2.hist(filtered, color='#87CEFA', edgecolor="#000000")
+ax2.set_title('Divvy Trip Duration Sans Outliers', y=1.01,
+              fontsize=14, fontweight='bold')
+ax2.set_xlabel('Duration in Seconds')
+plt.show()
+
+#seconds
+divvy.trip_duration /= 60
+
+print('Average Divvy trip in minutes: {0}'.format(divvy.trip_duration.mean()))
+print('BE ADVISED: Scales are significantly different.')
+x = divvy.trip_duration
+filtered = x[~outliers.is_outlier(x)]
+
+fig, (ax1, ax2) = plt.subplots(1,2, figsize=(16, 5))
+ax1.hist(x, color='#87CEFA', edgecolor="#000000")
+ax1.set_title('Divvy Trip Duration', y=1.01,
+              fontsize=14, fontweight='bold')
+ax1.set_xlabel('Duration in Minutes')
+ax2.hist(filtered, color='#87CEFA', edgecolor="#000000")
+ax2.set_title('Divvy Trip Duration Sans Outliers', y=1.01,
+              fontsize=14, fontweight='bold')
+ax2.set_xlabel('Duration in Minutes')
+plt.show()
+
+
+
+print("Maximum Trip Duration: {0:,.0f}"
+      .format(stats.scoreatpercentile(divvy.trip_duration, 100)))
+print("Trip Duration 99th percentile: {0:,.0f}"
+      .format(stats.scoreatpercentile(divvy.trip_duration, 99)))
+
+
+divvy.trip_duration.quantile(0.995)
+treks = divvy[divvy.trip_duration > 128]; len(treks)
+len(treks)/len(divvy) * 100
+
+ind = pd.DatetimeIndex(divvy.start_time)
+divvy['date'] = ind.date.astype('datetime64')
+divvy['month'] = ind.month
+divvy['hour'] = ind.hour
+
+divvy.weekday = divvy.start_time.dt.dayofweek
+divvy['day_of_week'] = pd.Series(divvy.weekday)
+
+x = pd.DataFrame(divvy.weekday.value_counts().sort_values(ascending=False))
+x = x.rename(columns={'start_time':'count'});
+y = pd.DataFrame(divvy.weekday.value_counts()/divvy.weekday.value_counts().sum())
+y = y*100; y = y.rename(columns={'start_time':'% of total'})
+z = pd.DataFrame(y.sort_index().pct_change()*100)
+z = z.rename(columns={'% of total':'pct change'});
+
+days = {'day': ['Monday', 'Tuesday', 'Wednesday','Thursday',
+                'Friday', 'Saturday','Sunday']}
+days = pd.DataFrame(days, columns = days)
+
+#The day of the week with Monday=0, Sunday=6
+day_breakout = pd.concat([days, x, y, z], axis=1); print(day_breakout)
+print
+print('Total rides {0}\n'.format(divvy.weekday.value_counts().sum()))
+
+
+
+fig = plt.figure(figsize=(8, 6))
+plt.gca()
+plt.xticks([0, 1, 2, 3, 4, 5, 6], 
+           ['Mon', 'Tue', 'Wed', 'Thur', 'Fri', 'Sat', 'Sun'], fontsize=12)
+plt.yticks([100000, 200000, 300000, 400000, 500000],
+           ['100,000', '200,000', '300,000', '400,000',
+            '500,000'], fontsize=12)
+plt.hist(divvy.day_of_week, bins=np.arange(8)-0.25,
+         width=0.70, color='#87CEFA', edgecolor='#000000')
+plt.title("Divvy Ride Count by Days of the Week");	
+
+
+
+#The day of the week with Monday=0, Sunday=6
+days = 366
+Wed = divvy.day_of_week.value_counts().sort_index()[2]
+Mon = divvy.day_of_week.value_counts().sort_index()[0]
+print('Average difference between the busiest and least busy day was roughly {0} rides per week.'
+      .format(int((Mon-Wed)/days)))
+
+rides = divvy.pivot_table('start_station', index='date',
+                              aggfunc='count', columns='user_type', )
+
+
+rides2 = rides[['Subscriber', 'Customer']]; rides2
+fig, ax = plt.subplots(2, figsize=(20, 14))
+plt.rcParams['lines.linewidth'] = 3
+fig.subplots_adjust(hspace=0.4)
+rides2.iloc[:, 0].plot(ax=ax[0], color='#87CEFA')
+rides2.iloc[:, 1].plot(ax=ax[1], color='#000000');
+ax[0].set_xlabel('2016', y=-1.04, fontsize=13)
+ax[1].set_xlabel('2016', fontsize=13)
+#ax[0].set_ylim([0, 3000])
+#ax[1].set_ylim([0, 3000])
+#for axi in ax:
+#    axi.set_xticklabels(['January', 'February', 'March', 'April', 'May',
+#                         'June', 'July', 'August', 'September','October',
+#                         'November', 'December'], fontsize=13)
+#for axi in ax:
+#    axi.set_yticklabels(['2,000', '4,000', '6,000', '8,000', '10,000',
+#                         '12,000', '14,000'], fontsize=13)
+ax[0].set_title('Divvy Subscribers', fontsize=18, fontweight='bold')
+ax[1].set_title('Divvy Customers', fontsize=18, fontweight='bold');
+fig.savefig('Divvy_images/usage_trends_2016.png', bbox_inches='tight')
+
+
+
+#The day of the week with Monday=0, Sunday=6
+mem = rides.sort_values('Subscriber', ascending=False)
+mem['day'] = mem.index.weekday
+print('Subscriber Top Ten \n{0}\n'
+      .format(mem.sort_index(by='Subscriber', ascending=[False]).head(10)))
+print('Subscriber Bottom Ten \n{0}'
+      .format(mem.sort_index(by='Subscriber', ascending=[True]).head(10)))
+
+
+
+
+#The day of the week with Monday=0, Sunday=6
+cus = rides.sort_values('Customer', ascending=False)
+cus['day'] = cus.index.weekday
+print('Customer Top Ten \n{0}\n'
+      .format(cus.sort_index(by='Customer', ascending=[False]).head(10)))
+print('Customer Bottom Ten \n{0}'
+      .format(cus.sort_index(by='Customer', ascending=[True]).head(10)))
+
+
+#Customer top ten was dominated by weekend days and two Mondays which were national holidays The bottom ten occurred during the bleak winter months and interesting enough included the Valentine's Day holiday.
+ind = pd.DatetimeIndex(divvy.date); ind.dayofweek
+divvy['weekend'] = (ind.dayofweek > 4)
+hourly = divvy.pivot_table('trip_id', aggfunc='count',
+                           index=['date'], columns=['user_type', 'weekend', 'hour'])
+fig, ax = plt.subplots(1, 2, figsize=(16, 8), sharex=True, sharey=True)
+fig.subplots_adjust(wspace=0.1)
+fmt = plt.FuncFormatter(lambda x, *args: '{0}:00'.format(int(x)))
+color_cycle = plt.rcParams['axes.color_cycle'] = ['#87CEFA', '#000000']
+
+for weekend in (False, True):
+    axi = ax[int(weekend)]
+    for i, col in enumerate(['Subscriber', 'Customer']):
+        vals = hourly[col][weekend].values
+        vals = np.hstack([vals, vals[:, :1]])
+        #values transformed plotted at slim linewidth
+        axi.plot(range(25), vals.T, #alpha set to reduce transparency
+                 color=color_cycle[i], lw=1, alpha=0.05)
+        #mean (ignoring NaNs) of the values plotted with larger linewidth
+        axi.plot(range(25), np.nanmean(vals, 0),
+                 color=color_cycle[i], lw=3, label=col)
+    axi.xaxis.set_major_locator(plt.MultipleLocator(4))
+    axi.xaxis.set_major_formatter(fmt)
+    #axi.set_ylim(0, 1700); axi.set_xlim(0, 24)
+    axi.set_title('Saturday - Sunday' if weekend else 'Monday - Friday')
+    axi.legend(loc='upper left', prop={'size':13})
+    axi.set_xlabel('Time of Day (military)')
+ax[0].set_ylabel('Number of Rides')
+fig.suptitle('Hourly Trends: Weekdays and Weekends by Account Type', size=14, y=1.02);
+fig.savefig('Divvy_images/hourly_trend.png', bbox_inches='tight')
+
+divvy.month.value_counts().sort_index()
+
+
+#The day of the week with Monday=0, Sunday=6
+m = pd.DataFrame(divvy.month.value_counts().sort_values(ascending=False))
+m = m.rename(columns={'month':'count'});
+n = pd.DataFrame(divvy.month.value_counts()/divvy.month.value_counts().sum())
+n = n*100; n = n.rename(columns={'month':'% of total'})
+o = pd.DataFrame(n.sort_index().pct_change()*100)
+o = o.rename(columns={'% of total':'pct change'})
+months = {'month': ['index zero', 'January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September','October', 'November', 'December']}
+months = pd.DataFrame(months, columns = months)
+
+
+month_breakout = pd.concat([months, m, n, o], axis=1);
+print(month_breakout[1:])
+print
+print('Total rides {0}\n'.format(divvy.month.value_counts().sum()))
+
+
+
+fig = plt.figure(figsize=(8, 5))
+plt.gca()
+plt.xticks([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 
+           ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'June', 'July',
+            'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], fontsize=12)
+plt.yticks([100000, 200000, 300000, 400000, 500000],
+           ['100,000', '200,000', '300,000','400,000',
+            '500,000'], fontsize=12)
+plt.xlim([.33, 12.67])
+pd.Series.hist(divvy.month, bins=np.arange(14)-0.35,
+               width=0.75, color='#87CEFA', edgecolor='#000000')
+plt.title("Divvy Ride Count by Month");
+
+
+fig, ax = plt.subplots(figsize=(8, 5))
+o['pct change'].plot(kind='bar', edgecolor="#000000");
+plt.xticks(fontsize=12.5, rotation=0)
+group_labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May',
+                'June', 'July', 'Aug', 'Sep', 'Oct',
+                'Nov', 'Dec']
+ax.set_xticklabels(group_labels)
+plt.yticks([75, 50, 25, 0, -25, -50, -75],
+           ['75%', '50%', '25%', '0%', '-25%',
+            '-50%', '-75%'], fontsize=12)
+plt.title('Percentage change month over month', fontsize=14)
+fig.savefig('Divvy_images/percentage_change_by_month.png', bbox_inches='tight');
+
+
+divvy_subscribers = divvy[divvy['user_type'] != 'Customer']
+divvy_customers = divvy[divvy['user_type'] != 'Subscriber']
+
+months = {'2016': ['-', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']}
+months = pd.DataFrame(months, columns=months);
+
+m = pd.DataFrame(divvy_subscribers.month.value_counts())
+m = m.rename(columns={'month':'Subscriber Rides'})
+c = pd.DataFrame(divvy_customers.month.value_counts())
+c = c.rename(columns={'month':'Customer Rides'})
+total = pd.DataFrame(divvy.month.value_counts().sort_index());
+total = total.rename(columns={'month':'Total Rides'})
+x = pd.concat([months, m, c, total], axis=1)
+
+
+x = x.set_index('2016'); x = x.drop(['-'])
+
+
+fig, ax = plt.subplots(figsize=(14, 8), sharex=True, sharey=True)
+ax2 = sharex=ax
+
+x['Subscriber Rides'].plot(kind='bar', color='#87CEFA',
+                           edgecolor="000000", ax=ax,
+                           position=0, width=0.33);
+x['Customer Rides'].plot(kind='bar', color='#000000',
+                           ax=ax2, position=1, width=0.33)
+plt.xlim([-.67, 11.67])
+plt.xticks(fontsize=13, rotation='horizontal')
+plt.yticks([0, 50000, 100000, 150000, 200000, 250000, 300000, 350000], 
+          ['0', '50,000', '100,000', '150,000', '200,000', '250,000',
+           '300,000', '350,000'],fontsize=12)
+plt.title('Divvy Rides by User Type and Month', size=16)
+plt.legend(fontsize=14, loc='best');
+fig.savefig('Divvy_images/breakout_by_month.png', bbox_inches='tight')
+
+
+#weather
+chi_weather = pd.read_csv('Divvy_data/Chicago_Ohare_WU_NOAA.csv',
+                         index_col='DATE', parse_dates=True)
+chi_weather.info()
+
+#Memory usage does not include memory consumed by elements
+# that are not components of the array if deep=False
+print('Total bytes: {0} and Total MB: {1}\n'
+      .format(chi_weather.memory_usage(deep=True).sum(),
+              int(chi_weather.memory_usage(deep=True).sum()/1048576)))
+print(chi_weather.memory_usage(deep=True))
+
+chi_weather._data
+chi_weather.columns
+chi_weather.columns
+chi_weather.index
+
+
+complete_forecast = chi_weather.notnull().sum() * 100.0/chi_weather.shape[0]
+complete_forecast = complete_forecast.round(2); complete_forecast.sort()
+print("Percentage complete for each column: \n{0}"
+      .format(complete_forecast))
+
+chi_weather.drop(['station', 'station_name', 'elevation', 'latitude', 'longitude'],
+                 axis=1, inplace=True)
+
+correlation = chi_weather.corr()
+plt.figure(figsize=(30, 12))
+sns.heatmap(correlation, square=True, annot=True)
+plt.title('Correlation between parameters in chi_weather dataset',
+          fontsize='x-large', fontweight='bold', y=1.02);
+
+
+
+
+def data_range(series):
+    return series.max() - series.min()
+data_range(chi_weather)
+
+#temperature
+print('The mean of the daily average temperature for 2016: {:.2f}\n'
+      .format(chi_weather.average_temp.mean()))
+print('The average daily temperature range for 2016 - max of {0} and min of {1}.'
+      .format(chi_weather.max_temp.max(), chi_weather.min_temp.min()))
+
+print('All temperature data --> degrees Fahrenheit.\n')
+hot = chi_weather[chi_weather.max_temp >= 90]
+print('The number of days where the \
+high temperature hit 90 degrees or above: {0}\n'.format(len(hot)))
+chilly = chi_weather[chi_weather.max_temp <= 40]
+print('The number of days with the \
+high temperature capped at 40 degrees or less: {0}\n'.format(len(chilly)))
+why_people_move_away = chi_weather[chi_weather.min_temp <= 30]
+print('The number of days where the \
+low temperature dipped to 30 degrees or below: {0}\n'.format(len(why_people_move_away)))
+
+
+
+c = dict(Customer='#000000', Subscriber='#87CEFA', set_edgecolor='black')
+g = sns.FacetGrid(by_date, col="weekend", hue='user_type',
+                  palette=c, hue_order=["Subscriber", "Customer"], size=6)
+g.map(plt.scatter, "average_temp", "count", edgecolor="black")
+g.map(sns.regplot, "average_temp", "count")
+g.add_legend(frameon=True)
+#g.axes[0,0].set_xlim(-15,)
+#g.axes[0,1].set_xlim(-15,)
+g.axes[0,0].set_ylim(-2000,)
+g.axes[0,1].set_ylim(-2000,)
+g.axes[0, 0].set_title('')
+g.axes[0, 1].set_title('')
+g.axes[0, 0].text(0.05, 0.95, 'Monday - Friday', va='top', size=14,
+                  transform=g.axes[0, 0].transAxes)
+g.axes[0, 1].text(0.05, 0.95, 'Saturday - Sunday', va='top', size=14,
+                  transform=g.axes[0, 1].transAxes)
+g.fig.text(0.45, 1, "Temperature Trend: Weekdays and Weekends by Account Type",
+           ha='center', va='top', size=16);
+for ax in g.axes.flat:
+    ax.set_xlabel('Average Temperature')
+g.axes.flat[0].set_ylabel('Ride Count');
+g.fig.savefig('Divvy_images/temp_trend.png', bbox_inches='tight')
+
+#precipitaion
+total_prec = chi_weather.precipitation.sum()
+print('Total precipitation for 2016 was {0} inches'.format(total_prec))
+
+year=366; avg_precip = total_prec/year; round(avg_precip, 3)
+
+wet = chi_weather.precipitation.value_counts(); wet.head()
+print('Percentage of days in 2016 without any recorded precipitation: {:.2f}%'
+      .format(wet[0]/year*100))
+
+fig = plt.figure(figsize=(8, 5))
+plt.gca()
+plt.hist(chi_weather.precipitation, bins=20, color='#87CEFA', edgecolor='#000000')
+plt.xlabel('Precipitation in inches', fontsize=13)
+plt.title('Precipitation Count for Chicago (2016)');
+
+
+rainy = chi_weather[chi_weather.precipitation >= 1.0];
+print('Days with an inch or more of recorded precipitation: {0}'
+      .format(len(rainy)))
+v_rainy = chi_weather[chi_weather.precipitation >= 2.0]
+print('Days with two or more inches of recorded precipitation: {0}'
+      .format(len(v_rainy)))
+
+      
+
+
+
+
+
